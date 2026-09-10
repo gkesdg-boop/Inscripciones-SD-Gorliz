@@ -365,9 +365,10 @@
 <div class="modal-overlay" id="loginModal" hidden>
   <div class="modal">
     <h3>Acceso del staff</h3>
-    <p>Introduce la contraseña del club para ver el panel de inscripciones.</p>
-    <div class="modal-err" id="modalErr">Contraseña incorrecta.</div>
-    <input type="text" id="passInput" placeholder="Contraseña" autocomplete="off">
+    <p>Inicia sesión con la cuenta del staff para ver el panel de inscripciones.</p>
+    <div class="modal-err" id="modalErr">Email o contraseña incorrectos.</div>
+    <input type="email" id="emailInput" placeholder="Email" autocomplete="off">
+    <input type="password" id="passInput" placeholder="Contraseña" autocomplete="off">
     <div class="modal-actions">
       <button id="cancelLoginBtn">Cancelar</button>
       <button class="primary" id="confirmLoginBtn">Entrar</button>
@@ -375,12 +376,25 @@
   </div>
 </div>
 
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+
 <script>
   // ---- CONFIG ----
-  // Contraseña del panel de staff. Cámbiala por la vuestra.
-  const STAFF_PASSWORD = "gorliz2627";
-  const STORAGE_KEY = "inscripciones";
-
+  // Conexión con la base de datos real del club (Firebase).
+  const firebaseConfig = {
+    apiKey: "AIzaSyAgV6Y4ynlnGKBptsZfM0eqAnhsCnzDwrA",
+    authDomain: "inscripciones-sd-gorliz.firebaseapp.com",
+    projectId: "inscripciones-sd-gorliz",
+    storageBucket: "inscripciones-sd-gorliz.firebasestorage.app",
+    messagingSenderId: "182416673485",
+    appId: "1:182416673485:web:70e224e9596e6e2524b784"
+  };
+  firebase.initializeApp(firebaseConfig);
+  const db = firebase.firestore();
+  const auth = firebase.auth();
+  const COLLECTION = "inscripciones";
   // ---- Acceso staff oculto: solo entra quien abre el link con ?staff al final ----
   // Ejemplo: https://vuestro-dominio.com/inscripciones.html?staff
   const isStaffLink = new URLSearchParams(window.location.search).has('staff');
@@ -431,23 +445,13 @@
     submitBtn.textContent = 'Enviando...';
 
     const entry = {
-      id: (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random()),
       playerName, birthYear, guardianName, phone, email, priorClub, previousTeam, notes,
       status: 'pendiente',
-      createdAt: new Date().toISOString()
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
     };
 
     try {
-      let list = [];
-      try {
-        const existing = await window.storage.get(STORAGE_KEY, true);
-        if (existing && existing.value) list = JSON.parse(existing.value);
-      } catch (err) {
-        list = [];
-      }
-      list.push(entry);
-      const result = await window.storage.set(STORAGE_KEY, JSON.stringify(list), true);
-      if (!result) throw new Error('No se pudo guardar');
+      await db.collection(COLLECTION).add(entry);
 
       form.hidden = true;
       document.getElementById('formPanel').hidden = true;
@@ -476,37 +480,52 @@
   const publicView = document.getElementById('publicView');
   const staffView = document.getElementById('staffView');
   const loginModal = document.getElementById('loginModal');
+  const emailInput = document.getElementById('emailInput');
   const passInput = document.getElementById('passInput');
   const modalErr = document.getElementById('modalErr');
+  const confirmLoginBtn = document.getElementById('confirmLoginBtn');
 
   document.getElementById('cancelLoginBtn').addEventListener('click', () => {
     loginModal.hidden = true;
     // sin ?staff en la URL no hay nada más que mostrar; volvemos a quitar el parámetro si lo había
     window.location.href = window.location.pathname;
   });
-  document.getElementById('confirmLoginBtn').addEventListener('click', tryLogin);
+  confirmLoginBtn.addEventListener('click', tryLogin);
   passInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') tryLogin(); });
+  emailInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') tryLogin(); });
 
-  function tryLogin() {
-    if (passInput.value === STAFF_PASSWORD) {
-      loginModal.hidden = true;
-      publicView.hidden = true;
-      staffView.hidden = false;
-      loadEntries();
-    } else {
+  async function tryLogin() {
+    modalErr.style.display = 'none';
+    confirmLoginBtn.disabled = true;
+    try {
+      await auth.signInWithEmailAndPassword(emailInput.value.trim(), passInput.value);
+      // onAuthStateChanged (más abajo) se encarga de mostrar el panel
+    } catch (err) {
       modalErr.style.display = 'block';
+    } finally {
+      confirmLoginBtn.disabled = false;
     }
   }
 
-  document.getElementById('exitStaffBtn').addEventListener('click', () => {
+  document.getElementById('exitStaffBtn').addEventListener('click', async () => {
+    await auth.signOut();
     window.location.href = window.location.pathname;
   });
 
-  if (isStaffLink) {
+  // Controla qué se ve según si hay sesión iniciada y si el link lleva ?staff
+  auth.onAuthStateChanged((user) => {
+    if (!isStaffLink) return;
     publicView.hidden = true;
-    loginModal.hidden = false;
-    passInput.focus();
-  }
+    if (user) {
+      loginModal.hidden = true;
+      staffView.hidden = false;
+      loadEntries();
+    } else {
+      staffView.hidden = true;
+      loginModal.hidden = false;
+      emailInput.focus();
+    }
+  });
 
   // ---- Panel de staff ----
   const entriesContainer = document.getElementById('entriesContainer');
@@ -526,9 +545,17 @@
   async function loadEntries() {
     entriesContainer.innerHTML = '<div class="empty-state">Cargando inscripciones...</div>';
     try {
-      const result = await window.storage.get(STORAGE_KEY, true);
-      allEntries = (result && result.value) ? JSON.parse(result.value) : [];
+      const snapshot = await db.collection(COLLECTION).get();
+      allEntries = snapshot.docs.map(doc => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          ...data,
+          createdAt: (data.createdAt && data.createdAt.toDate) ? data.createdAt.toDate().toISOString() : new Date().toISOString()
+        };
+      });
     } catch (err) {
+      console.error(err);
       allEntries = [];
     }
     renderEntries();
@@ -613,9 +640,13 @@
         const id = e.target.dataset.id;
         const newStatus = e.target.value;
         e.target.className = 'status-select status-' + newStatus;
-        const entry = allEntries.find(x => x.id === id);
-        if (entry) entry.status = newStatus;
-        await saveEntries();
+        try {
+          await db.collection(COLLECTION).doc(id).update({ status: newStatus });
+          const entry = allEntries.find(x => x.id === id);
+          if (entry) entry.status = newStatus;
+        } catch (err) {
+          alert('No se pudo guardar el cambio. Comprueba tu conexión e inténtalo de nuevo.');
+        }
       });
     });
 
@@ -623,19 +654,15 @@
       btn.addEventListener('click', async (e) => {
         const id = e.target.dataset.id;
         if (!confirm('¿Eliminar esta inscripción?')) return;
-        allEntries = allEntries.filter(x => x.id !== id);
-        await saveEntries();
-        renderEntries();
+        try {
+          await db.collection(COLLECTION).doc(id).delete();
+          allEntries = allEntries.filter(x => x.id !== id);
+          renderEntries();
+        } catch (err) {
+          alert('No se pudo eliminar. Comprueba tu conexión e inténtalo de nuevo.');
+        }
       });
     });
-  }
-
-  async function saveEntries() {
-    try {
-      await window.storage.set(STORAGE_KEY, JSON.stringify(allEntries), true);
-    } catch (err) {
-      alert('No se pudo guardar el cambio. Comprueba tu conexión e inténtalo de nuevo.');
-    }
   }
 
   function escapeHtml(str) {
