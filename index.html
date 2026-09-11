@@ -351,7 +351,7 @@
   .success-card p{color:var(--ink-soft);font-size:15px;margin:0 0 24px;font-family:var(--font-display);}
   .success-card .pill-btn{background:var(--club-red);color:#fff;}
   .success-card .pill-btn:hover{background:var(--club-red-dark);}
-  .success-footnote{color:#B7BDB3;font-size:11px;margin:34px 0 0;}
+  .success-footnote{color:#B7BDB3;font-size:9px;letter-spacing:0.02em;margin:60px 0 0;padding-top:18px;}
 
   /* ---- Panel de staff: mismo estilo de tela que el formulario ---- */
   #staffView{
@@ -627,11 +627,12 @@
         <div class="qrow" data-key="previousTeam" data-required="false" data-show-if="priorClub:si" data-state="closed" hidden>
           <button type="button" class="qrow-head">
             <span class="qrow-icon">7</span>
-            <span class="qrow-label">Equipo en el que jugó <span class="hint">(opcional)</span></span>
+            <span class="qrow-label">Equipo en el que jugó</span>
             <span class="qrow-chevron">▾</span>
           </button>
           <div class="qrow-body-wrap"><div class="qrow-body"><div class="qrow-body-inner">
             <input type="text" id="previousTeam" placeholder="Nombre del equipo o club" autocomplete="off">
+            <div class="qrow-error">Este dato es obligatorio.</div>
             <div class="qrow-actions"><button type="button" class="btn-next">Continuar</button></div>
           </div></div></div>
         </div>
@@ -654,7 +655,7 @@
 
       <div class="step-card-footer">
         ¿Tienes alguna duda? Escríbenos por Instagram a <strong>@sdgorliz</strong>,<br>
-        envíanos un email a <strong>gkesdg@gmail.com</strong> o llámanos al <strong>622 252 141</strong>.
+        envíanos un email a <strong>gkesdg@gmail.com</strong> o escríbenos al WhatsApp <strong>622 252 141</strong>.
       </div>
     </div>
   </div>
@@ -821,6 +822,7 @@
       const [key, val] = cond.split(':');
       const shouldShow = answers[key] === val;
       row.hidden = !shouldShow;
+      row.dataset.required = shouldShow ? 'true' : 'false';
       if (!shouldShow) {
         const input = row.querySelector('input, textarea');
         if (input) input.value = '';
